@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Trap Pro Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --primary-blue: #58a6ff;
+            --success-green: #3fb950;
+            --danger-red: #ff7b72;
+            --warn-yellow: #f2cc60;
+            --text-main: #c9d1d9;
+            --text-dim: #8b949e;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            width: 100%;
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        header h1 {
+            font-size: 3.5rem;
+            margin: 0;
+            color: var(--primary-blue);
+            letter-spacing: 2px;
+            text-shadow: 0 0 20px rgba(88, 166, 255, 0.3);
+        }
+
+        /* --- ROAD & ANIMATION --- */
+        .stage {
+            width: 90%;
+            max-width: 1000px;
+            height: 250px;
+            background-color: var(--card-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            position: relative;
+            margin-bottom: 40px;
+            overflow: hidden;
+        }
+
+        .road {
+            position: absolute;
+            top: 100px;
+            left: 50px;
+            right: 50px;
+            height: 100px;
+            background-color: #21262d;
+            border-radius: 4px;
+        }
+
+        .road-stripes {
+            position: absolute;
+            top: 48%;
+            left: 20px;
+            right: 20px;
+            height: 4px;
+            background: repeating-linear-gradient(90deg, #8b949e, #8b949e 30px, transparent 30px, transparent 60px);
+        }
+
+        .sensor {
+            position: absolute;
+            top: 30px;
+            width: 4px;
+            height: 190px;
+            background-color: var(--danger-red);
+            opacity: 0.3;
+            border-radius: 2px;
+            z-index: 5;
+        }
+
+        .sensor.a { left: 150px; }
+        .sensor.b { left: 850px; }
+
+        .sensor-label {
+            position: absolute;
+            top: 10px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            color: white;
+            text-align: center;
+            width: 100px;
+        }
+
+        .sensor-label.a { left: 100px; }
+        .sensor-label.b { left: 800px; }
+
+        .sensor-light {
+            position: absolute;
+            top: 35px;
+            width: 30px;
+            height: 30px;
+            background-color: #3a3a3a;
+            border: 3px solid var(--text-dim);
+            border-radius: 50%;
+            transition: background-color 0.2s, box-shadow 0.2s;
+        }
+
+        .sensor-light.a { left: 135px; }
+        .sensor-light.b { left: 835px; }
+
+        .sensor-light.active {
+            background-color: var(--danger-red);
+            box-shadow: 0 0 15px var(--danger-red);
+        }
+
+        /* --- THE CAR --- */
+        .car {
+            position: absolute;
+            top: 125px;
+            left: -100px; /* Start off screen */
+            width: 80px;
+            height: 45px;
+            background-color: var(--success-green);
+            border-radius: 8px 12px 6px 6px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            transition: left 0.05s linear;
+            z-index: 10;
+        }
+
+        .car::after { /* Window */
+            content: '';
+            position: absolute;
+            top: 5px;
+            right: 15px;
+            width: 25px;
+            height: 35px;
+            background-color: var(--bg-color);
+            border-radius: 4px;
+        }
+
+        /* --- DASHBOARD STATS --- */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            width: 90%;
+            max-width: 1000px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .card-title {
+            color: var(--text-dim);
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        #speed-value {
+            font-size: 8rem;
+            font-weight: bold;
+            color: var(--success-green);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+        }
+
+        .unit {
+            font-size: 1.5rem;
+            color: var(--primary-blue);
+            font-weight: bold;
+        }
+
+        .history-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            text-align: left;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.4rem;
+            color: white;
+        }
+
+        .history-item:last-child { border-bottom: none; }
+
+        .status {
+            font-style: italic;
+            color: var(--text-dim);
+            font-size: 1.2rem;
+            margin-top: 10px;
+        }
+
+        .status.highlight { color: var(--warn-yellow); }
+
+        /* Alert Effect */
+        .alert-flash {
+            animation: alert-blink 0.5s infinite alternate;
+        }
+
+        @keyframes alert-blink {
+            from { background-color: var(--bg-color); }
+            to { background-color: #4a1a1a; }
+        }
+
+        .alert-banner {
+            position: fixed;
+            top: 20px;
+            background: var(--danger-red);
+            color: black;
+            font-weight: bold;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-size: 1.5rem;
+            box-shadow: 0 0 30px rgba(255,123,114,0.6);
+            display: none;
+            z-index: 1000;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="alertBanner" class="alert-banner">🚨 SPEED LIMIT EXCEEDED 🚨</div>
+
+    <header>
+        <h1>ULTRASONIC SPEED TRAP</h1>
+    </header>
+
+    <div class="stage">
+        <div class="sensor-label a">SENSOR A</div>
+        <div class="sensor-label b">SENSOR B</div>
+        <div id="light-a" class="sensor-light a"></div>
+        <div id="light-b" class="sensor-light b"></div>
+        
+        <div class="sensor a"></div>
+        <div class="sensor b"></div>
+
+        <div class="road">
+            <div class="road-stripes"></div>
+        </div>
+
+        <div id="car" class="car"></div>
+    </div>
+
+    <div class="dashboard">
+        <div class="card">
+            <div class="card-title">Live Velocity</div>
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <div>
+                   <span id="speed-ms" style="font-size: 6rem; font-weight: bold; color: var(--success-green); font-family: 'Courier New', monospace;">0.00</span>
+                   <span class="unit">m/s</span>
+                </div>
+                <div style="margin-top: -20px;">
+                   <span id="speed-kmh" style="font-size: 4rem; font-weight: bold; color: var(--primary-blue); font-family: 'Courier New', monospace;">0.0</span>
+                   <span class="unit" style="font-size: 1rem;">km/h</span>
+                </div>
+            </div>
+            <div id="status-text" class="status">System Online...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Recent Passes</div>
+            <div id="history" class="history-list">
+                <div class="history-item" style="color:#444">Waiting for data...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const car = document.getElementById('car');
+        const lightA = document.getElementById('light-a');
+        const lightB = document.getElementById('light-b');
+        const speedMS = document.getElementById('speed-ms');
+        const speedKMH = document.getElementById('speed-kmh');
+        const statusText = document.getElementById('status-text');
+        const historyList = document.getElementById('history');
+
+        let animationInterval = null;
+        let carPos = -100;
+        let isAnimating = false;
+
+        function resetCar() {
+            isAnimating = false;
+            clearInterval(animationInterval);
+            carPos = 50;
+            car.style.left = carPos + 'px';
+            lightA.classList.remove('active');
+            lightB.classList.remove('active');
+            statusText.style.color = "var(--text-dim)";
+        }
+
+        function startAnimation() {
+            if (isAnimating) return;
+            isAnimating = true;
+            statusText.innerText = "VEHICLE DETECTED - TIMING...";
+            statusText.classList.add('highlight');
+            lightA.classList.add('active');
+            
+            carPos = 150; 
+            car.style.left = carPos + 'px';
+
+            // 60 FPS Fluid Animation
+            animationInterval = setInterval(() => {
+                if(carPos < 850) {
+                    carPos += 8; // Smaller steps, faster frequency
+                    car.style.left = carPos + 'px';
+                } else {
+                    clearInterval(animationInterval);
+                }
+            }, 16); 
+        }
+
+        socket.on('state_update', function(data) {
+            console.log("State:", data.state);
+            if (data.state === "WAITING" || data.state === "TIMEOUT") {
+                resetCar();
+                statusText.innerText = "Ready for Next Pass...";
+                statusText.classList.remove('highlight');
+            } 
+            else if (data.state === "P1_CROSSED") {
+                startAnimation();
+                speedMS.innerText = "--.--";
+                speedKMH.innerText = "--.-";
+                speedMS.style.color = "var(--primary-blue)";
+                speedKMH.style.color = "var(--primary-blue)";
+            }
+            else if (data.state === "P2_CROSSED") {
+                lightB.classList.add('active');
+                clearInterval(animationInterval);
+                carPos = 850; 
+                car.style.left = carPos + 'px';
+                statusText.innerText = "PASS COMPLETE";
+                statusText.style.color = "var(--success-green)";
+            }
+        });
+
+        socket.on('speed_update', function(data) {
+            console.log("Speed:", data.speed, data.unit);
+            const val = parseFloat(data.speed).toFixed(data.unit === 'm/s' ? 2 : 1);
+            
+            if (data.unit === 'm/s') {
+                speedMS.innerText = val;
+                speedMS.style.color = "var(--success-green)";
+                
+                // Log to history only on m/s update (usually arrives same time)
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.innerHTML = `> ${val} m/s <span style="font-size:0.8rem; color:#8b949e">@ ${new Date().toLocaleTimeString()}</span>`;
+                
+                if (historyList.children[0] && historyList.children[0].style.color === 'rgb(68, 68, 68)') {
+                    historyList.innerHTML = '';
+                }
+                
+                historyList.insertBefore(item, historyList.firstChild);
+                if (historyList.children.length > 5) {
+                    historyList.removeChild(historyList.lastChild);
+                }
+            } else {
+                speedKMH.innerText = val;
+                speedKMH.style.color = "var(--primary-blue)";
+            }
+        });
+        socket.on('speed_alert', function(data) {
+            console.log("ALERT:", data.type);
+            const banner = document.getElementById('alertBanner');
+            banner.style.display = 'block';
+            document.body.classList.add('alert-flash');
+            
+            // Auto-clear after 3 seconds
+            setTimeout(() => {
+                banner.style.display = 'none';
+                document.body.classList.remove('alert-flash');
+            }, 3000);
+        });
+    </script>
+</body>
+</html>

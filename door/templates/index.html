@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Door Lock - Control Panel</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap');
+
+        :root {
+            --bg-dark: #0a0e14;
+            --card-bg: #1a1f26;
+            --accent-blue: #00d2ff;
+            --secure-green: #00ff88;
+            --danger-red: #ff3344;
+            --text-main: #e0e0e0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            margin-top: 40px;
+            color: var(--accent-blue);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        .status-header {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: #888;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            width: 90%;
+            max-width: 1000px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid #333;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Lock Visualizer */
+        .lock-container {
+            width: 200px;
+            height: 200px;
+            border: 4px solid #333;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .lock-icon {
+            font-size: 80px;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .locked .lock-icon {
+            color: var(--danger-red);
+            transform: scale(1);
+        }
+
+        .unlocked .lock-icon {
+            color: var(--secure-green);
+            transform: scale(1.1) rotate(360deg);
+        }
+
+        .status-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 10px;
+        }
+
+        /* Logs Section */
+        .logs-container {
+            width: 100%;
+            height: 250px;
+            overflow-y: auto;
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+            border: 1px solid #222;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 3px;
+        }
+
+        .log-time { color: #555; margin-right: 10px; }
+        .log-msg { color: var(--accent-blue); }
+        .log-ACCESS_GRANTED { color: var(--secure-green); font-weight: bold; }
+        .log-ACCESS_DENIED { color: var(--danger-red); font-weight: bold; }
+
+        /* Controls */
+        .controls-row {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .btn {
+            border: none;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.3s;
+            flex: 1;
+        }
+
+        .btn-unlock {
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.3);
+        }
+
+        .btn-lock {
+            background: linear-gradient(135deg, #ff3344 0%, #a31d2a 100%);
+            box-shadow: 0 5px 15px rgba(255, 51, 68, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.2);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .glow-red { box-shadow: 0 0 20px rgba(255, 51, 68, 0.2); border-color: var(--danger-red); }
+        .glow-green { box-shadow: 0 0 20px rgba(0, 255, 136, 0.2); border-color: var(--secure-green); }
+
+    </style>
+</head>
+<body class="locked" id="mainBody">
+    <h1>Smart Door Lock System</h1>
+    <div class="status-header">Real-time Security Dashboard</div>
+
+    <div class="dashboard-grid">
+        <!-- LOCK STATUS CARD -->
+        <div class="card" id="statusCard">
+            <div class="lock-container">
+                <div class="lock-icon" id="lockIcon">🔒</div>
+            </div>
+            <div class="status-text" id="statusLabel">LOCKED</div>
+            <div style="margin-top: 10px; color: #888;" id="subStatus">System Armed</div>
+            
+            <div class="controls-row">
+                <button class="btn btn-unlock" id="actionBtn" onclick="handleSmartAction()">Remote Unlock</button>
+            </div>
+        </div>
+
+        <!-- ACTIVITY LOG CARD -->
+        <div class="card">
+            <h3 style="margin-top: 0; color: var(--accent-blue); font-family: 'Orbitron';">Activity Logs</h3>
+            <div class="logs-container" id="logWindow">
+                <div class="log-entry"><span class="log-time">Syncing...</span> <span class="log-msg">Waiting for Arduino feed</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const mainBody = document.getElementById('mainBody');
+        const lockIcon = document.getElementById('lockIcon');
+        const statusLabel = document.getElementById('statusLabel');
+        const subStatus = document.getElementById('subStatus');
+        const logWindow = document.getElementById('logWindow');
+        const statusCard = document.getElementById('statusCard');
+        const actionBtn = document.getElementById('actionBtn');
+        let currentDoorState = "LOCKED";
+
+        function handleSmartAction() {
+            if (currentDoorState === "LOCKED") {
+                socket.emit('web_unlock');
+                addLog("Manual Unlock Signal Sent", "CMD");
+            } else {
+                socket.emit('web_lock');
+                addLog("Manual Lock Signal Sent", "CMD");
+            }
+        }
+
+        function addLog(msg, type) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerHTML = `<span class="log-time">[${timeStr}]</span> <span class="log-msg log-${type}">${msg}</span>`;
+            logWindow.prepend(div);
+            
+            if (logWindow.children.length > 50) logWindow.lastChild.remove();
+        }
+
+        socket.on('telemetry', (data) => {
+            console.log("Got Telemetry:", data);
+            
+            if (data.key === "STATE") {
+                handleState(data.val);
+            } else {
+                addLog(`${data.key}: ${data.val}`, "DATA");
+            }
+        });
+
+        function handleState(state) {
+            addLog(`STATE UPDATE: ${state}`, state);
+
+            if (state === "LOCKED") {
+                currentDoorState = "LOCKED";
+                mainBody.className = "locked";
+                statusCard.className = "card glow-red";
+                lockIcon.innerText = "🔒";
+                statusLabel.innerText = "LOCKED";
+                statusLabel.style.color = "var(--danger-red)";
+                subStatus.innerText = "System Armed & Secure";
+                
+                // Update Button
+                actionBtn.innerText = "Remote Unlock";
+                actionBtn.className = "btn btn-unlock";
+            } 
+            else if (state === "OPEN" || state.includes("GRANTED")) {
+                currentDoorState = "OPEN";
+                mainBody.className = "unlocked";
+                statusCard.className = "card glow-green";
+                lockIcon.innerText = "🔓";
+                statusLabel.innerText = "OPEN";
+                statusLabel.style.color = "var(--secure-green)";
+                subStatus.innerText = "Access Validated";
+                
+                // Update Button
+                actionBtn.innerText = "Manual Lock";
+                actionBtn.className = "btn btn-lock";
+            }
+            else if (state.includes("LOCKING")) {
+                statusLabel.innerText = "LOCKED";
+                statusLabel.style.color = "#ff8800";
+                subStatus.innerText = "Securing Bolt...";
+                actionBtn.innerText = "Processing...";
+            }
+            else if (state === "ACCESS_DENIED") {
+                statusLabel.innerText = "DENIED";
+                statusLabel.style.color = "var(--danger-red)";
+                subStatus.innerText = "Invalid Credentials!";
+                
+                // Shake effect
+                statusCard.classList.add('shake');
+                setTimeout(() => statusCard.classList.remove('shake'), 500);
+            }
+        }
+    </script>
+</body>
+</html>
