@@ -119,8 +119,24 @@
         .sensor-light.b { left: 835px; }
 
         .sensor-light.active {
-            background-color: var(--danger-red);
-            box-shadow: 0 0 15px var(--danger-red);
+            animation: pulse-active 0.8s infinite alternate;
+        }
+
+        .sensor-light.a.active {
+            background-color: var(--primary-blue);
+            box-shadow: 0 0 25px var(--primary-blue);
+            border-color: #fff;
+        }
+
+        .sensor-light.b.active {
+            background-color: var(--success-green);
+            box-shadow: 0 0 25px var(--success-green);
+            border-color: #fff;
+        }
+
+        @keyframes pulse-active {
+            from { transform: scale(1.0); filter: brightness(1.0); }
+            to { transform: scale(1.2); filter: brightness(1.5); }
         }
 
         /* --- THE CAR --- */
@@ -279,6 +295,7 @@
                 </div>
             </div>
             <div id="status-text" class="status">System Online...</div>
+            <div id="status-debug" style="font-size: 0.8rem; color: #555; margin-top: 5px;">S1: -- | S2: --</div>
         </div>
 
         <div class="card">
@@ -395,6 +412,18 @@
                 banner.style.display = 'none';
                 document.body.classList.remove('alert-flash');
             }, 3000);
+        });
+
+        socket.on('debug_data', function(data) {
+            // FORMAT: DEBUG_DIST:S1:25.4_S2:240.0
+            const info = data.info;
+            const display = document.getElementById('status-debug');
+            if (display && info.includes("S1:")) {
+                const parts = info.split(":");
+                const s1 = parts[2].split("_")[0];
+                const s2 = parts[3];
+                display.innerText = `S1: ${s1}cm | S2: ${s2}cm`;
+            }
         });
     </script>
 </body>

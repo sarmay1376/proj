@@ -84,6 +84,18 @@ void showLCD(String line1, String line2 = "") {
   lcd.print(buf2);
 }
 
+// --- HELPER: Timer-Safe Beep (Digital Bit-bang) ---
+void passiveBeep(int freq, int dur) {
+  long delayUs = 1000000L / freq / 2;
+  long numCycles = (long)freq * dur / 1000L;
+  for (long i = 0; i < numCycles; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delayMicroseconds(delayUs);
+    digitalWrite(BUZZER_PIN, LOW);
+    delayMicroseconds(delayUs);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   SPI.begin();
@@ -99,20 +111,19 @@ void setup() {
     rfid.PCD_SetAntennaGain(rfid.RxGain_33dB); 
   }
 
-  // 2. IR INIT (No LED feedback to avoid timer clash)
-  IrReceiver.begin(IR_PIN); 
-
-  pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-
-  // 3. Servo & LCD
+  // 2. Servo & LCD
   lockServo.attach(SERVO_PIN);
   lockServo.write(LOCKED_ANGLE);
   lcd.begin(16, 2);
   showLCD(" SYSTEM RESET ", " HARDWARE READY");
   
-  // Startup Pulse
-  tone(BUZZER_PIN, 2000, 100);
+  // 3. IR INIT (CALLED LAST: Prevents Timer-Clash with servo)
+  IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK); 
+
+  // Startup Pulse (Passive Digital Pulse: Won't break IR timer)
+  pinMode(BUZZER_PIN, OUTPUT);
+  passiveBeep(2000, 100);
+  pinMode(RED_LED_PIN, OUTPUT);
   digitalWrite(RED_LED_PIN, LOW);
   delay(1000);
   digitalWrite(RED_LED_PIN, HIGH);
@@ -131,7 +142,7 @@ void loop() {
 
   // 1b. PRIORITY RFID CHECK
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-    tone(BUZZER_PIN, 2000, 50); 
+    passiveBeep(2000, 50); 
     String content = "";
     for (byte i = 0; i < rfid.uid.size; i++) {
       content.concat(String(rfid.uid.uidByte[i] < 0x10 ? "0" : ""));
@@ -152,7 +163,7 @@ void loop() {
   char key = keypad.getKey();
   if (key) {
     Serial.print("KEY_PRESSED: "); Serial.println(key);
-    tone(BUZZER_PIN, 1000, 50);
+    passiveBeep(1000, 50);
     lastKeyPress = millis();
 
     if (key == '#') {
@@ -187,13 +198,13 @@ void loop() {
 
     // All NON-ZERO data is interesting!
     if (raw != 0) {
-      tone(BUZZER_PIN, 1500, 20); 
-      Serial.print("IR_RAW: 0x"); Serial.println(raw, HEX);
-      Serial.print("IR_CMD: 0x"); Serial.println(cmd, HEX);
-
-      // FUZZY MATCHING: Accept slightly jittery codes (0x96, 0x94, etc.)
-      if ((cmd & 0xF0) == 0x90 || cmd == 0x45) grantAccess("REMOTE");
-      else if (cmd == 0x47 || cmd == 0x22) manualRelock();
+      passiveBeep(1500, 20); 
+      if (cmd == IR_OPEN_CODE || cmd == 0x45) {
+        if (isDoorOpen) manualRelock();
+        else grantAccess("REMOTE");
+      }
+      else if (cmd == IR_CLOSE_CODE) manualRelock();
+      else if ((cmd & 0xF0) == 0x90) grantAccess("REMOTE"); // Backup fuzzy
       else {
         char buf[17];
         sprintf(buf, "CMD:0x%02X R:0x%lX", (int)cmd, raw);
@@ -240,13 +251,16 @@ void loop() {
 }
 
 void grantAccess(String method) {
-  if (isDoorOpen) return;
+  if (isDoorOpen) {
+    manualRelock();
+    return;
+  }
 
   Serial.print("STATE:ACCESS_GRANTED_BY_"); Serial.println(method);
   showLCD("ACCESS GRANTED", method);
 
   digitalWrite(RED_LED_PIN, LOW);
-  tone(BUZZER_PIN, 1500, 200); delay(250); tone(BUZZER_PIN, 2000, 200);
+  passiveBeep(1800, 150); delay(50); passiveBeep(2400, 150); // Slightly 'happier' tone
 
   Serial.println("STATE:OPEN");
   lockServo.write(OPEN_ANGLE);
@@ -263,7 +277,7 @@ void denyAccess(String method) {
 
   for (int i = 0; i < 3; i++) {
     digitalWrite(RED_LED_PIN, LOW);
-    tone(BUZZER_PIN, 400, 200);
+    passiveBeep(400, 200);
     delay(200);
     digitalWrite(RED_LED_PIN, HIGH);
     delay(200);
