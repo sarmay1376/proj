@@ -1,30 +1,36 @@
-#define IR_PIN 2
+// MEGA 2560 - BROAD SCAN IR MONITOR
+const int scanPins[] = {2, 3, 18, 19, 20, 21};
+const int numPins = 6;
 
 void setup() {
   Serial.begin(115200);
-  pinMode(IR_PIN, INPUT_PULLUP);
+  for (int i = 0; i < numPins; i++) {
+    pinMode(scanPins[i], INPUT_PULLUP);
+  }
   pinMode(LED_BUILTIN, OUTPUT);
-  Serial.println(" --- HEARTBEAT MONITOR (NON-BLOCKING) ---");
+  Serial.println("--- MEGA IR BROAD-SCAN START ---");
+  Serial.println("Checking Pins: 2, 3, 18, 19, 20, 21...");
 }
 
 void loop() {
-  static unsigned long lastPrint = 0;
-  bool pinState = digitalRead(IR_PIN);
-  unsigned long now = millis();
-
-  // 1. HEARTBEAT: If you see this, the Arduino is NOT frozen.
-  if (now - lastPrint > 500) {
-    Serial.print("INFO:IR_PIN is "); 
-    Serial.println(pinState == HIGH ? "HIGH (OK)" : "LOW (SHORT!)");
-    lastPrint = now;
+  bool anyPulse = false;
+  
+  for (int i = 0; i < numPins; i++) {
+    if (digitalRead(scanPins[i]) == LOW) {
+      Serial.print("  >>> SIGNAL DETECTED ON PIN: ");
+      Serial.print(scanPins[i]);
+      Serial.println(" <<<  ");
+      anyPulse = true;
+    }
   }
 
-  // 2. INSTANT FEEDBACK:
-  digitalWrite(LED_BUILTIN, !pinState); // LED ON when pin is LOW (Seeing Light)
+  digitalWrite(LED_BUILTIN, anyPulse);
   
-  if (pinState == LOW) {
-    // If you see this, your hardware/remote is definitely working!
-    Serial.println("  >>> PULSE! <<<  ");
-    delay(5); // Ultra-small debounce
+  if (anyPulse) delay(20); // Small debounce for readability
+  
+  static unsigned long lastBeat = 0;
+  if (millis() - lastBeat > 1000) {
+    Serial.println("SEARCHING...");
+    lastBeat = millis();
   }
 }
